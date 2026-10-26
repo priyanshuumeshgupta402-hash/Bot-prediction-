@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, ContextTypes, filters
 from config import BOT_TOKEN, CREATOR_TAG
 from database import init_db, add_channel_db, get_user_channels, get_all_configured_channels
-from engine import start_session_workflow
+from engine import start_session_workflow, run_test_sequence
 from keep_alive import keep_alive
 
 WAIT_CHANNEL, WAIT_TIME = range(2)
@@ -37,6 +37,18 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_photo(photo=BANNER_URL, caption=text, reply_markup=main_menu(), parse_mode="HTML")
     return ConversationHandler.END
 
+async def test_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("<b>⚠️ Please provide channel username!\nExample: <code>/test @Cash_with_raja</code></b>", parse_mode="HTML")
+        return
+    channel = context.args[0]
+    await update.message.reply_text(f"<b>🚀 Testing connection on <code>{channel}</code>...</b>", parse_mode="HTML")
+    success = await run_test_sequence(channel)
+    if success:
+        await update.message.reply_text(f"<b>✅ Test successful! Check your channel <code>{channel}</code> for sticker & chart.</b>", parse_mode="HTML")
+    else:
+        await update.message.reply_text(f"<b>❌ Test failed! Make sure the bot is an ADMIN in <code>{channel}</code> and username is correct. Check Render Logs.</b>", parse_mode="HTML")
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -54,7 +66,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "menu_add_channel":
         await query.edit_message_caption(
-            caption="<b>➕ ADD CHANNEL FOR PREDICTIONS</b>\n\n<b>Send target channel username or invite link (e.g., @yourchannel):</b>",
+            caption="<b>➕ ADD CHANNEL FOR PREDICTIONS</b>\n\n<b>Send target channel username (e.g., @Cash_with_raja):</b>",
             reply_markup=back_menu(), parse_mode="HTML"
         )
         return WAIT_CHANNEL
@@ -78,12 +90,10 @@ async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel = context.user_data.get("channel")
     
     await add_channel_db(user_id, channel, session_time)
-    
-    # Start background workflow task
     asyncio.create_task(start_session_workflow(channel, session_time))
     
     await update.message.reply_text(
-        f"<b>✅ Channel <code>{channel}</code> configured successfully!\n⏰ Session Start Time: {session_time} (IST)\n\n📌 Note: Make sure the bot is added as an ADMIN in your channel!</b>", 
+        f"<b>✅ Channel <code>{channel}</code> configured successfully!\n⏰ Session Start Time: {session_time} (IST)\n\n📌 Note: Make sure the bot is added as an ADMIN in <code>{channel}</code>!</b>", 
         parse_mode="HTML", 
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")]])
     )
@@ -91,7 +101,6 @@ async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init_setup(application: Application):
     await init_db()
-    # Bot start hote hi database se saare channels load karke unke loops start kar do
     channels = await get_all_configured_channels()
     for channel, session_time in channels:
         asyncio.create_task(start_session_workflow(channel, session_time))
@@ -112,10 +121,11 @@ def main():
     )
     
     app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("test", test_cmd))
     app.add_handler(conv)
-    print("🔥 Prediction Bot V59 is live with IST Scheduler!")
+    print("🔥 Prediction Bot V59 is live!")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-                                                            
+        
