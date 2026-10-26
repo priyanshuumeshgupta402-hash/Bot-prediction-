@@ -2,7 +2,7 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, ContextTypes, filters
 from config import BOT_TOKEN, CREATOR_TAG
-from database import init_db, add_channel_db, get_user_channels
+from database import init_db, add_channel_db, get_user_channels, get_all_configured_channels
 from engine import start_session_workflow
 from keep_alive import keep_alive
 
@@ -69,7 +69,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def receive_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["channel"] = update.message.text.strip()
-    await update.message.reply_text("<b>⏰ Send session start time in 24-hour format (e.g., 15:00 for 3:00 PM):</b>", parse_mode="HTML")
+    await update.message.reply_text("<b>⏰ Send session start time in 24-hour format (e.g., 15:00 for 3:00 PM IST):</b>", parse_mode="HTML")
     return WAIT_TIME
 
 async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -83,15 +83,23 @@ async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     asyncio.create_task(start_session_workflow(channel, session_time))
     
     await update.message.reply_text(
-        f"<b>✅ Channel <code>{channel}</code> configured successfully!\n⏰ Session Start Time: {session_time}\n\n📌 Note: Make sure the bot is added as an ADMIN in your channel!</b>", 
+        f"<b>✅ Channel <code>{channel}</code> configured successfully!\n⏰ Session Start Time: {session_time} (IST)\n\n📌 Note: Make sure the bot is added as an ADMIN in your channel!</b>", 
         parse_mode="HTML", 
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")]])
     )
     return ConversationHandler.END
 
+async def post_init_setup(application: Application):
+    await init_db()
+    # Bot start hote hi database se saare channels load karke unke loops start kar do
+    channels = await get_all_configured_channels()
+    for channel, session_time in channels:
+        asyncio.create_task(start_session_workflow(channel, session_time))
+    print(f"🔥 Resumed background workflows for {len(channels)} channels!")
+
 def main():
     keep_alive()
-    app = Application.builder().token(BOT_TOKEN).post_init(lambda a: init_db()).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init_setup).build()
     
     conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(button_handler)],
@@ -105,9 +113,9 @@ def main():
     
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(conv)
-    print("🔥 Prediction Bot V59 is live!")
+    print("🔥 Prediction Bot V59 is live with IST Scheduler!")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-        
+                                                            
