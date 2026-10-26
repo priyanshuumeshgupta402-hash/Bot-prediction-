@@ -15,15 +15,30 @@ def get_ist_time():
     return ist_now.strftime("%H:%M")
 
 def normalize_time(t_str):
+    """Agar user '4:46' likhe, toh use automatically '04:46' ya 24-hr format mein match kar le"""
+    t_str = t_str.strip()
     try:
-        parts = t_str.strip().split(':')
+        parts = t_str.split(':')
         if len(parts) == 2:
-            return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+            h = parts[0].zfill(2)
+            m = parts[1].zfill(2)
+            return f"{h}:{m}"
     except Exception:
         pass
-    return t_str.strip()
+    return t_str
+
+def normalize_channel(ch_str):
+    """Agar user link bhej de (https://t.me/...), toh use @username mein badal de"""
+    ch_str = ch_str.strip()
+    if "t.me/" in ch_str:
+        username = ch_str.split("t.me/")[-1].strip('/')
+        return f"@{username}"
+    if not ch_str.startswith('@') and not ch_str.startswith('-'):
+        return f"@{ch_str}"
+    return ch_str
 
 async def run_test_sequence(channel: str):
+    channel = normalize_channel(channel)
     try:
         if SECTION_START_STICKER:
             await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
@@ -76,6 +91,7 @@ def generate_v59_prediction(list_data, nextP):
     return {"period": str(nextP), "betType": bet_type, "n1": n1, "n2": n2}
 
 async def execute_live_session(channel: str, total_trades: int = 10):
+    channel = normalize_channel(channel)
     try:
         print(f"🔥 Starting {total_trades}-trade session for {channel}")
         if SECTION_START_STICKER:
@@ -137,6 +153,7 @@ async def execute_live_session(channel: str, total_trades: int = 10):
         print(f"Session error in {channel}: {e}")
 
 async def start_session_workflow(channel: str, session_time: str, total_trades: int = 10):
+    channel = normalize_channel(channel)
     target_time = normalize_time(session_time)
     print(f"🚀 Registered workflow for {channel} at {target_time} IST for {total_trades} trades")
     
@@ -144,6 +161,6 @@ async def start_session_workflow(channel: str, session_time: str, total_trades: 
         current_time = get_ist_time()
         if current_time == target_time:
             await execute_live_session(channel, total_trades)
-            await asyncio.sleep(120)  # Stop duplicate triggers within the same minute
-        await asyncio.sleep(15)       # Check every 15 seconds
-        
+            await asyncio.sleep(120)
+        await asyncio.sleep(15)
+    
