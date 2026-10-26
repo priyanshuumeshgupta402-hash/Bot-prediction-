@@ -15,7 +15,6 @@ def get_ist_time():
     return ist_now.strftime("%H:%M")
 
 def normalize_time(t_str):
-    # Agar user '3:5' ya '3:05' likhe, toh use '03:05' mein convert kar dega
     try:
         parts = t_str.strip().split(':')
         if len(parts) == 2:
@@ -23,6 +22,19 @@ def normalize_time(t_str):
     except Exception:
         pass
     return t_str.strip()
+
+async def run_test_sequence(channel: str):
+    try:
+        print(f"🧪 Running test sequence for {channel}")
+        if SECTION_START_STICKER:
+            await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
+        await asyncio.sleep(2)
+        if LEVEL_CHART_IMG:
+            await bot.send_photo(chat_id=channel, photo=LEVEL_CHART_IMG, caption="<b>📊 TEST CHART - BOT IS LIVE</b>", parse_mode="HTML")
+        return True
+    except Exception as e:
+        print(f"Test error in channel {channel}: {e}")
+        return False
 
 def to_bold_unicode(str_val):
     bold_map = {
@@ -74,19 +86,15 @@ async def start_session_workflow(channel: str, session_time: str):
         if current_time == target_time:
             try:
                 print(f"🔥 Session started for {channel}!")
-                # 1. Send Section Start Sticker
                 if SECTION_START_STICKER:
                     await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
                 
                 await asyncio.sleep(3)
-
-                # 2. Send Level Maintain Chart Image
                 if LEVEL_CHART_IMG:
                     await bot.send_photo(chat_id=channel, photo=LEVEL_CHART_IMG, caption="<b>📊 MAINTAIN 3-LEVEL FUNDS</b>", parse_mode="HTML")
 
                 await asyncio.sleep(5)
 
-                # 3. Start 10 Trades Sequence
                 for trade_num in range(1, 11):
                     list_data = await fetch_latest_history()
                     if list_data:
@@ -101,13 +109,10 @@ async def start_session_workflow(channel: str, session_time: str):
                         bold_nums = to_bold_unicode(f"{pred['n1']} , {pred['n2']}")
                         
                         msg_text = f"‼️ {bold_period}\n\n📈 {bold_bet_type} ➔ {bold_nums}"
-                        
                         sent_msg = await bot.send_message(chat_id=channel, text=msg_text)
                         
-                        # Wait for round result
                         await asyncio.sleep(55)
                         
-                        # Check result & send respective stickers
                         new_list = await fetch_latest_history()
                         hit = next((x for x in new_list if str(x["issueNumber"]) == pred["period"]), None)
                         if hit:
@@ -132,7 +137,6 @@ async def start_session_workflow(channel: str, session_time: str):
                     
                     await asyncio.sleep(10)
 
-                # 4. Send Section Close Sticker after 10 trades
                 if SECTION_CLOSE_STICKER:
                     await asyncio.sleep(2)
                     await bot.send_sticker(chat_id=channel, sticker=SECTION_CLOSE_STICKER)
