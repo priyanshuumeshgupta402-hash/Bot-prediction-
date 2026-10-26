@@ -2,33 +2,17 @@ import asyncio
 import aiohttp
 from datetime import datetime, timedelta, timezone
 from telegram import Bot
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from config import (
     BOT_TOKEN, SECTION_START_STICKER, WIN_STICKER, 
     JACKPOT_STICKER, SECTION_CLOSE_STICKER, LEVEL_CHART_IMG
 )
 
 bot = Bot(token=BOT_TOKEN)
+scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 API = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
-def get_ist_time():
-    ist_now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
-    return ist_now.strftime("%H:%M")
-
-def normalize_time(t_str):
-    """Agar user '4:46' likhe, toh use automatically '04:46' ya 24-hr format mein match kar le"""
-    t_str = t_str.strip()
-    try:
-        parts = t_str.split(':')
-        if len(parts) == 2:
-            h = parts[0].zfill(2)
-            m = parts[1].zfill(2)
-            return f"{h}:{m}"
-    except Exception:
-        pass
-    return t_str
-
 def normalize_channel(ch_str):
-    """Agar user link bhej de (https://t.me/...), toh use @username mein badal de"""
     ch_str = ch_str.strip()
     if "t.me/" in ch_str:
         username = ch_str.split("t.me/")[-1].strip('/')
@@ -93,7 +77,7 @@ def generate_v59_prediction(list_data, nextP):
 async def execute_live_session(channel: str, total_trades: int = 10):
     channel = normalize_channel(channel)
     try:
-        print(f"🔥 Starting {total_trades}-trade session for {channel}")
+        print(f"🔥 Executing scheduled session for {channel} with {total_trades} trades")
         if SECTION_START_STICKER:
             await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
         
@@ -148,19 +132,39 @@ async def execute_live_session(channel: str, total_trades: int = 10):
         if SECTION_CLOSE_STICKER:
             await asyncio.sleep(2)
             await bot.send_sticker(chat_id=channel, sticker=SECTION_CLOSE_STICKER)
-        print(f"✅ Session completed for {channel}")
+        print(f"✅ Session successfully completed for {channel}")
     except Exception as e:
         print(f"Session error in {channel}: {e}")
 
-async def start_session_workflow(channel: str, session_time: str, total_trades: int = 10):
-    channel = normalize_channel(channel)
-    target_time = normalize_time(session_time)
-    print(f"🚀 Registered workflow for {channel} at {target_time} IST for {total_trades} trades")
-    
-    while True:
-        current_time = get_ist_time()
-        if current_time == target_time:
-            await execute_live_session(channel, total_trades)
-            await asyncio.sleep(120)
-        await asyncio.sleep(15)
-    
+def schedule_session(channel: str, session_time: str, total_trades: int = 10):
+    """APScheduler ka use karke exact HH:MM par job schedule karega"""
+    try:
+        parts = session_time.strip().split(':')
+        hour = int(parts[0])
+        minute = int(parts[1])
+        
+        # Unique job id channel aur time ke hisaab se
+        job_id = f"{channel}_{hour}_{minute}"
+        
+        # Agar pehle se same time par job hai toh use hata kar naye update karo
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+            
+        scheduler.add_job(
+            execute_live_session,
+            'cron',
+            hour=hour,
+            minute=minute,
+            args=[channel, total_trades],
+            id=job_id,
+            replace_existing=True
+        )
+        print(f"⏰ Successfully scheduled session for {channel} at {hour:02d}:{minute:02d} IST ({total_trades} trades)")
+    except Exception as e:
+        print(f"Scheduling error: {e}")
+
+def init_scheduler():
+    if not scheduler.running:
+        scheduler.start()
+        print("🔥 APScheduler started successfully!")
+            
