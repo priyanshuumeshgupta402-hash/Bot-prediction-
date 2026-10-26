@@ -1,6 +1,6 @@
 import asyncio
 import aiohttp
-import time
+from datetime import datetime, timedelta, timezone
 from telegram import Bot
 from config import (
     BOT_TOKEN, SECTION_START_STICKER, WIN_STICKER, 
@@ -9,6 +9,11 @@ from config import (
 
 bot = Bot(token=BOT_TOKEN)
 API = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
+
+def get_ist_time():
+    # Render ke UTC time ko exact Indian Standard Time (IST) mein convert karna
+    ist_now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+    return ist_now.strftime("%H:%M")
 
 def to_bold_unicode(str_val):
     bold_map = {
@@ -29,7 +34,7 @@ def to_bold_unicode(str_val):
 async def fetch_latest_history():
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.get(API + "?t=" + str(int(time.time()*1000))) as resp:
+            async with session.get(API + "?t=" + str(int(datetime.now().timestamp()*1000))) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     return data.get("data", {}).get("list", [])
@@ -52,10 +57,12 @@ def generate_v59_prediction(list_data, nextP):
     return {"period": str(nextP), "betType": bet_type, "n1": n1, "n2": n2}
 
 async def start_session_workflow(channel: str, session_time: str):
+    print(f"🚀 Session Workflow initialized for channel {channel} at time {session_time} IST")
     while True:
-        now_str = time.strftime("%H:%M")
-        if now_str == session_time:
+        current_time = get_ist_time()
+        if current_time == session_time:
             try:
+                print(f"🔥 Session started for {channel}!")
                 # 1. Send Section Start Sticker
                 if SECTION_START_STICKER:
                     await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
@@ -119,9 +126,10 @@ async def start_session_workflow(channel: str, session_time: str):
                     await asyncio.sleep(2)
                     await bot.send_sticker(chat_id=channel, sticker=SECTION_CLOSE_STICKER)
 
-                break  # Session finished
+                # Wait for 2 minutes so it doesn't trigger twice in the same minute
+                await asyncio.sleep(120)
             except Exception as e:
                 print(f"Workflow error: {e}")
         
         await asyncio.sleep(30)
-    
+        
