@@ -58,24 +58,108 @@ async def fetch_latest_history():
             pass
         return []
 
-def generate_v59_prediction(list_data, nextP):
+def period_seed(period):
+    h = 2166136261
+    s = str(period)
+    for i in range(len(s)):
+        h ^= ord(s[i])
+        h = (h * 16777619) & 0xFFFFFFFF
+    return h
+
+def mulberry32(seed):
+    def rng():
+        nonlocal seed
+        seed = (seed + 0x6D2B79F5) & 0xFFFFFFFF
+        t = seed
+        t = (t ^ (t >> 15)) * (t | 1)
+        t &= 0xFFFFFFFF
+        t ^= t + ((t ^ (t >> 7)) * 61)
+        t &= 0xFFFFFFFF
+        return ((t ^ (t >> 14)) >> 0) / 4294967296
+    return rng
+
+def pick_numbers_history(history, pool, period):
+    if not pool:
+        pool = [5, 6, 7, 8, 9]
+    if not history:
+        return {"n1": pool[0], "n2": pool[-1]}
+    
+    last_num = history[0]
+    scored = []
+    for num in pool:
+        score = 0
+        freq = history[:40].count(num)
+        score += freq * 2
+        
+        last_seen = history.index(num) if num in history else 60
+        if 5 <= last_seen <= 15:
+            score += 40
+        elif 16 <= last_seen <= 25:
+            score += 25
+        elif last_seen > 25:
+            score += 30
+        
+        d = abs(last_num - num)
+        if d == 1: score += 18
+        if d == 2: score += 10
+        
+        scored.append({"num": num, "score": score})
+    
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    n1 = scored[0]["num"]
+    n2 = scored[1]["num"] if len(scored) > 1 else scored[0]["num"]
+    if n1 == n2:
+        alt = next((s["num"] for s in scored if s["num"] != n1), (pool[0] if pool[0] != n1 else pool[1]))
+        n2 = alt
+    return {"n1": n1, "n2": n2}
+
+def generate_deep_v59_prediction(list_data, nextP):
+    """DeepSeek HTML file ka exact V59 Pure Size Prediction Logic"""
     if not list_data:
         return {"period": str(nextP), "betType": "BIG", "n1": 5, "n2": 8}
     
-    history = [int(x["number"]) for x in list_data[:20] if str(x["number"]).isdigit()]
+    history = [int(x["number"]) for x in list_data[:60] if str(x["number"]).isdigit()]
     if not history:
         return {"period": str(nextP), "betType": "SMALL", "n1": 3, "n2": 6}
     
-    last_num = history[0]
-    bet_type = "BIG" if last_num < 5 else "SMALL"
-    n1 = (last_num + 2) % 10
-    n2 = (last_num + 5) % 10
+    types = ["BIG" if n >= 5 else "SMALL" for n in history]
+    
+    size_score = 0
+    sz_streak = 1
+    for i in range(1, len(types)):
+        if types[i] == types[0]: sz_streak += 1
+        else: break
+        
+    r5 = types[:5].count("BIG") / 5 if len(types) >= 5 else 0.5
+    r10 = types[:10].count("BIG") / 10 if len(types) >= 10 else 0.5
+    
+    if r5 >= 0.8: size_score += 50
+    elif r5 <= 0.2: size_score -= 50
+    if r10 >= 0.7: size_score += 30
+    elif r10 <= 0.3: size_score -= 30
+    if sz_streak >= 2:
+        size_score += (30 if types[0] == "BIG" else -30)
+        
+    bet_type = "BIG" if size_score >= 0 else "SMALL"
+    
+    main_pool = [5, 6, 7, 8, 9] if bet_type == "BIG" else [0, 1, 2, 3, 4]
+    opp_pool = [0, 1, 2, 3, 4] if bet_type == "BIG" else [5, 6, 7, 8, 9]
+    
+    main_nums = pick_numbers_history(history, main_pool, nextP)
+    opp_nums = pick_numbers_history(history, opp_pool, str(nextP) + "opp")
+    
+    n1 = main_nums["n1"]
+    n2 = opp_nums["n1"]
+    if n1 == n2:
+        alt = next((p for p in opp_pool if p != n1), main_pool[0])
+        n2 = alt
+        
     return {"period": str(nextP), "betType": bet_type, "n1": n1, "n2": n2}
 
 async def execute_live_session(channel: str, total_trades: int = 10):
     channel = normalize_channel(channel)
     try:
-        print(f"🔥 Starting session for {channel} with {total_trades} trades")
+        print(f"🔥 Starting Quantum Deep V59 session for {channel} with {total_trades} trades")
         if SECTION_START_STICKER:
             await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
         
@@ -94,14 +178,16 @@ async def execute_live_session(channel: str, total_trades: int = 10):
             else:
                 nextP = str(int(datetime.now().timestamp() * 1000) % 1000000000)
             
-            pred = generate_v59_prediction(list_data, nextP)
-            period_short = pred["period"][-3:]
+            pred = generate_deep_v59_prediction(list_data, nextP)
+            
+            # HTML file ki tarah exact last 3 digits period number (jaise 723)
+            period_full = str(pred["period"])
+            period_short = period_full[-3:] if len(period_full) >= 3 else period_full.zfill(3)
             
             bold_period = to_bold_unicode(f"PERIOD NO - {period_short}")
             bold_bet_type = to_bold_unicode(pred["betType"])
             bold_nums = to_bold_unicode(f"{pred['n1']} , {pred['n2']}")
             
-            # Exact format matching your requirement
             msg_text = f"‼️ {bold_period}\n\n📈 {bold_bet_type} ➔ {bold_nums}"
             sent_msg = await bot.send_message(chat_id=channel, text=msg_text)
             
@@ -143,4 +229,4 @@ async def execute_live_session(channel: str, total_trades: int = 10):
         print(f"✅ Session successfully completed for {channel}")
     except Exception as e:
         print(f"Session error in {channel}: {e}")
-    
+        
