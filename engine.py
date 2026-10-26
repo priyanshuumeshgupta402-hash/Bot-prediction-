@@ -75,7 +75,7 @@ def generate_v59_prediction(list_data, nextP):
 async def execute_live_session(channel: str, total_trades: int = 10):
     channel = normalize_channel(channel)
     try:
-        print(f"🔥 Starting instant session for {channel} with {total_trades} trades")
+        print(f"🔥 Starting session for {channel} with {total_trades} trades")
         if SECTION_START_STICKER:
             await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
         
@@ -101,7 +101,7 @@ async def execute_live_session(channel: str, total_trades: int = 10):
             bold_bet_type = to_bold_unicode(pred["betType"])
             bold_nums = to_bold_unicode(f"{pred['n1']} , {pred['n2']}")
             
-            # Aapke format ke mutabiq exact message structure
+            # Exact format matching your requirement
             msg_text = f"‼️ {bold_period}\n\n📈 {bold_bet_type} ➔ {bold_nums}"
             sent_msg = await bot.send_message(chat_id=channel, text=msg_text)
             
@@ -140,7 +140,7 @@ async def execute_live_session(channel: str, total_trades: int = 10):
         if SECTION_CLOSE_STICKER:
             await asyncio.sleep(2)
             await bot.send_sticker(chat_id=channel, sticker=SECTION_CLOSE_STICKER)
-        print(f"✅ Instant session completed for {channel}")
+        print(f"✅ Session successfully completed for {channel}")
     except Exception as e:
         print(f"Session error in {channel}: {e}")
-        
+    
