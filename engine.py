@@ -87,43 +87,53 @@ async def execute_live_session(channel: str, total_trades: int = 10):
 
         for trade_num in range(1, total_trades + 1):
             list_data = await fetch_latest_history()
-            if list_data:
+            
+            if list_data and len(list_data) > 0 and str(list_data[0].get("issueNumber", "")).isdigit():
                 latest_issue = str(list_data[0]["issueNumber"])
                 nextP = str(int(latest_issue) + 1)
+            else:
+                nextP = str(int(datetime.now().timestamp() * 1000) % 1000000000)
+            
+            pred = generate_v59_prediction(list_data, nextP)
+            period_short = pred["period"][-3:]
+            
+            bold_period = to_bold_unicode(f"PERIOD NO - {period_short}")
+            bold_bet_type = to_bold_unicode(pred["betType"])
+            bold_nums = to_bold_unicode(f"{pred['n1']} , {pred['n2']}")
+            
+            # Aapke format ke mutabiq exact message structure
+            msg_text = f"‼️ {bold_period}\n\n📈 {bold_bet_type} ➔ {bold_nums}"
+            sent_msg = await bot.send_message(chat_id=channel, text=msg_text)
+            
+            await asyncio.sleep(55)
+            
+            new_list = await fetch_latest_history()
+            hit = None
+            if new_list:
+                hit = next((x for x in new_list if str(x.get("issueNumber")) == pred["period"]), None)
+            
+            if hit:
+                res_num = int(hit["number"])
+                res_sz = "BIG" if res_num >= 5 else "SMALL"
+                is_win = (res_sz == pred["betType"])
+                is_jackpot = (res_num == pred["n1"] or res_num == pred["n2"])
                 
-                pred = generate_v59_prediction(list_data, nextP)
-                period_short = pred["period"][-3:]
+                if is_jackpot:
+                    status_str = "💎 JACKPOT WIN"
+                    if JACKPOT_STICKER:
+                        await bot.send_sticker(chat_id=channel, sticker=JACKPOT_STICKER)
+                elif is_win:
+                    status_str = "✅ WIN"
+                    if WIN_STICKER:
+                        await bot.send_sticker(chat_id=channel, sticker=WIN_STICKER)
+                else:
+                    status_str = "❌ LOSS"
                 
-                bold_period = to_bold_unicode(f"PERIOD NO - {period_short}")
-                bold_bet_type = to_bold_unicode(pred["betType"])
-                bold_nums = to_bold_unicode(f"{pred['n1']} , {pred['n2']}")
-                
-                msg_text = f"‼️ {bold_period}\n\n📈 {bold_bet_type} ➔ {bold_nums}"
-                sent_msg = await bot.send_message(chat_id=channel, text=msg_text)
-                
-                await asyncio.sleep(55)
-                
-                new_list = await fetch_latest_history()
-                hit = next((x for x in new_list if str(x["issueNumber"]) == pred["period"]), None)
-                if hit:
-                    res_num = int(hit["number"])
-                    res_sz = "BIG" if res_num >= 5 else "SMALL"
-                    is_win = (res_sz == pred["betType"])
-                    is_jackpot = (res_num == pred["n1"] or res_num == pred["n2"])
-                    
-                    if is_jackpot:
-                        status_str = "💎 JACKPOT WIN"
-                        if JACKPOT_STICKER:
-                            await bot.send_sticker(chat_id=channel, sticker=JACKPOT_STICKER)
-                    elif is_win:
-                        status_str = "✅ WIN"
-                        if WIN_STICKER:
-                            await bot.send_sticker(chat_id=channel, sticker=WIN_STICKER)
-                    else:
-                        status_str = "❌ LOSS"
-                    
-                    updated_text = f"{msg_text}\n\nRESULT: {res_num} ({res_sz}) - {status_str}"
-                    await bot.edit_message_text(chat_id=channel, message_id=sent_msg.message_id, text=updated_text)
+                updated_text = f"{msg_text}\n\nRESULT: {res_num} ({res_sz}) - {status_str}"
+                await bot.edit_message_text(chat_id=channel, message_id=sent_msg.message_id, text=updated_text)
+            else:
+                updated_text = f"{msg_text}\n\nRESULT: N/A"
+                await bot.edit_message_text(chat_id=channel, message_id=sent_msg.message_id, text=updated_text)
             
             await asyncio.sleep(10)
 
@@ -133,4 +143,4 @@ async def execute_live_session(channel: str, total_trades: int = 10):
         print(f"✅ Instant session completed for {channel}")
     except Exception as e:
         print(f"Session error in {channel}: {e}")
-                    
+        
