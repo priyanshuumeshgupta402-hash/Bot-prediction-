@@ -3,16 +3,16 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, ContextTypes, filters
 from config import BOT_TOKEN, CREATOR_TAG
 from database import init_db, add_channel_db, get_user_channels, get_all_configured_channels
-from engine import start_session_workflow, run_test_sequence
+from engine import start_session_workflow, run_test_sequence, execute_live_session
 from keep_alive import keep_alive
 
-WAIT_CHANNEL, WAIT_TIME = range(2)
+WAIT_CHANNEL, WAIT_TIME, WAIT_TRADES = range(3)
 BANNER_URL = "https://i.ibb.co/tTZmsWrQ/62270897-7b06-4f65-b0cf-958f37cf6ba9.png"
 
 def main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⚙️ Configured Channels", callback_data="menu_settings")],
-        [InlineKeyboardButton("➕ Add Channel & Session Time", callback_data="menu_add_channel")]
+        [InlineKeyboardButton("➕ Add Channel & Set Schedule", callback_data="menu_add_channel")]
     ])
 
 def back_menu():
@@ -66,34 +66,48 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "menu_add_channel":
         await query.edit_message_caption(
-            caption="<b>➕ ADD CHANNEL FOR PREDICTIONS</b>\n\n<b>Send target channel username (e.g., @Cash_with_raja):</b>",
+            caption="<b>➕ ADD CHANNEL FOR PREDICTIONS</b>\n\n<b>Step 1/3: Send target channel username (e.g., @Cash_with_raja):</b>",
             reply_markup=back_menu(), parse_mode="HTML"
         )
         return WAIT_CHANNEL
 
     elif data == "menu_settings":
         channels = await get_user_channels(user_id)
-        ch_list = "\n".join([f"• <code>{c[0]}</code> (Time: {c[1]}) - <b>{c[2]}</b>" for c in channels]) if channels else "No channels configured yet."
-        text = f"<b>⚙️ YOUR CONFIGURED CHANNELS:</b>\n\n{ch_list}"
+        ch_list = "\n".join([f"• <code>{c[0]}</code> | Time: <b>{c[1]} IST</b> | Trades: <b>{c[2]}</b>" for c in channels]) if channels else "No channels configured yet."
+        text = f"<b>⚙️ YOUR CONFIGURED SCHEDULES:</b>\n\n{ch_list}"
         await query.edit_message_caption(caption=text, reply_markup=back_menu(), parse_mode="HTML")
 
     return ConversationHandler.END
 
 async def receive_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["channel"] = update.message.text.strip()
-    await update.message.reply_text("<b>⏰ Send session start time in 24-hour format (e.g., 15:00 for 3:00 PM IST):</b>", parse_mode="HTML")
+    await update.message.reply_text("<b>⏰ Step 2/3: Send session start time in 24-hour format (e.g., 16:35 for 4:35 PM IST):</b>", parse_mode="HTML")
     return WAIT_TIME
 
 async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["session_time"] = update.message.text.strip()
+    await update.message.reply_text("<b>📊 Step 3/3: How many trades do you want to send in this session? (e.g., 5, 10, 15):</b>", parse_mode="HTML")
+    return WAIT_TRADES
+
+async def receive_trades(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    session_time = update.message.text.strip()
+    try:
+        total_trades = int(update.message.text.strip())
+    except ValueError:
+        total_trades = 10
+        
     channel = context.user_data.get("channel")
+    session_time = context.user_data.get("session_time")
     
-    await add_channel_db(user_id, channel, session_time)
-    asyncio.create_task(start_session_workflow(channel, session_time))
+    await add_channel_db(user_id, channel, session_time, total_trades)
+    asyncio.create_task(start_session_workflow(channel, session_time, total_trades))
     
     await update.message.reply_text(
-        f"<b>✅ Channel <code>{channel}</code> configured successfully!\n⏰ Session Start Time: {session_time} (IST)\n\n📌 Note: Make sure the bot is added as an ADMIN in <code>{channel}</code>!</b>", 
+        f"<b>✅ Schedule Saved Successfully!</b>\n\n"
+        f"📢 <b>Channel:</b> <code>{channel}</code>\n"
+        f"⏰ <b>Start Time:</b> <code>{session_time} IST</code>\n"
+        f"🎯 <b>Total Trades:</b> <code>{total_trades}</code>\n\n"
+        f"<b>📌 Note: Bot exact schedule time par live trades shuru kar dega!</b>", 
         parse_mode="HTML", 
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")]])
     )
@@ -102,9 +116,12 @@ async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init_setup(application: Application):
     await init_db()
     channels = await get_all_configured_channels()
-    for channel, session_time in channels:
-        asyncio.create_task(start_session_workflow(channel, session_time))
-    print(f"🔥 Resumed background workflows for {len(channels)} channels!")
+    for item in channels:
+        ch = item[0]
+        tm = item[1]
+        tr = item[2] if len(item) > 2 else 10
+        asyncio.create_task(start_session_workflow(ch, tm, tr))
+    print(f"🔥 Loaded background workflows for {len(channels)} configured channels!")
 
 def main():
     keep_alive()
@@ -114,7 +131,8 @@ def main():
         entry_points=[CallbackQueryHandler(button_handler)],
         states={
             WAIT_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_channel), CallbackQueryHandler(button_handler)],
-            WAIT_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_time), CallbackQueryHandler(button_handler)]
+            WAIT_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_time), CallbackQueryHandler(button_handler)],
+            WAIT_TRADES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_trades), CallbackQueryHandler(button_handler)]
         },
         fallbacks=[CommandHandler("start", start_cmd), CallbackQueryHandler(button_handler)],
         per_message=False
@@ -123,8 +141,9 @@ def main():
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("test", test_cmd))
     app.add_handler(conv)
-    print("🔥 Prediction Bot V59 is live!")
+    print("🔥 Prediction Scheduler Bot is live!")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
+    
