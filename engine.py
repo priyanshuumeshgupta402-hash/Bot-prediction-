@@ -9,6 +9,7 @@ from config import (
 
 bot = Bot(token=BOT_TOKEN)
 API = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
+consecutive_losses_tracker = 0
 
 def normalize_channel(ch_str):
     ch_str = ch_str.strip()
@@ -66,55 +67,80 @@ def period_seed(period):
         h = (h * 16777619) & 0xFFFFFFFF
     return h
 
-def mulberry32(seed):
-    def rng():
-        nonlocal seed
-        seed = (seed + 0x6D2B79F5) & 0xFFFFFFFF
-        t = seed
+class Mulberry32:
+    def __init__(self, seed):
+        self.seed = seed & 0xFFFFFFFF
+
+    def next(self):
+        self.seed = (self.seed + 0x6D2B79F5) & 0xFFFFFFFF
+        t = self.seed
         t = (t ^ (t >> 15)) * (t | 1)
         t &= 0xFFFFFFFF
         t ^= t + ((t ^ (t >> 7)) * 61)
         t &= 0xFFFFFFFF
         return ((t ^ (t >> 14)) >> 0) / 4294967296
-    return rng
 
-def pick_numbers_history(history, pool, period):
+def pick_numbers_deterministic(history, pool, period_str, jackpot_mode=False):
     if not pool:
         pool = [5, 6, 7, 8, 9]
     if not history:
         return {"n1": pool[0], "n2": pool[-1]}
-    
+
     last_num = history[0]
+    recent_freq = {}
+    for n in history[:20]:
+        recent_freq[n] = recent_freq.get(n, 0) + 1
+
+    last_seen = {}
+    for idx, n in enumerate(history):
+        if n not in last_seen:
+            last_seen[n] = idx
+
+    freq = {}
+    for n in history[:40]:
+        freq[n] = freq.get(n, 0) + 1
+
     scored = []
     for num in pool:
         score = 0
-        freq = history[:40].count(num)
-        score += freq * 2
-        
-        last_seen = history.index(num) if num in history else 60
-        if 5 <= last_seen <= 15:
-            score += 40
-        elif 16 <= last_seen <= 25:
-            score += 25
-        elif last_seen > 25:
-            score += 30
-        
+        score += freq.get(num, 0) * 2
+        if recent_freq.get(num, 0) >= 2: score += 20
+        if recent_freq.get(num, 0) >= 3: score += 25
+
+        gap = last_seen.get(num, 60)
+        if jackpot_mode:
+            if gap > 15: score += 80
+            elif gap > 8: score += 40
+        else:
+            if 5 <= gap <= 15: score += 40
+            elif 16 <= gap <= 25: score += 25
+            elif gap > 25: score += 30
+            elif gap <= 1: score -= 15
+
+        if len(history) > 0 and history[0] == num: score -= 25
+        if len(history) > 1 and history[1] == num: score -= 15
+
         d = abs(last_num - num)
         if d == 1: score += 18
         if d == 2: score += 10
-        
+
         scored.append({"num": num, "score": score})
-    
+
     scored.sort(key=lambda x: x["score"], reverse=True)
     n1 = scored[0]["num"]
     n2 = scored[1]["num"] if len(scored) > 1 else scored[0]["num"]
+
     if n1 == n2:
-        alt = next((s["num"] for s in scored if s["num"] != n1), (pool[0] if pool[0] != n1 else pool[1]))
+        alt = next((s["num"] for s in scored if s["num"] != n1), pool[0] if pool[0] != n1 else pool[1])
         n2 = alt
+    if abs(n1 - n2) <= 1:
+        alt = next((s["num"] for s in scored if abs(n1 - s["num"]) > 1), n2)
+        n2 = alt
+
     return {"n1": n1, "n2": n2}
 
 def generate_deep_v59_prediction(list_data, nextP):
-    """DeepSeek HTML file ka exact V59 Pure Size Prediction Logic"""
+    global consecutive_losses_tracker
     if not list_data:
         return {"period": str(nextP), "betType": "BIG", "n1": 5, "n2": 8}
     
@@ -122,41 +148,46 @@ def generate_deep_v59_prediction(list_data, nextP):
     if not history:
         return {"period": str(nextP), "betType": "SMALL", "n1": 3, "n2": 6}
     
-    types = ["BIG" if n >= 5 else "SMALL" for n in history]
-    
+    types = ['BIG' if n >= 5 else 'SMALL' for n in history]
     size_score = 0
     sz_streak = 1
     for i in range(1, len(types)):
         if types[i] == types[0]: sz_streak += 1
         else: break
-        
-    r5 = types[:5].count("BIG") / 5 if len(types) >= 5 else 0.5
-    r10 = types[:10].count("BIG") / 10 if len(types) >= 10 else 0.5
-    
+
+    r5 = types[:5].count('BIG') / 5 if len(types) >= 5 else 0.5
+    r10 = types[:10].count('BIG') / 10 if len(types) >= 10 else 0.5
+
     if r5 >= 0.8: size_score += 50
     elif r5 <= 0.2: size_score -= 50
     if r10 >= 0.7: size_score += 30
     elif r10 <= 0.3: size_score -= 30
     if sz_streak >= 2:
-        size_score += (30 if types[0] == "BIG" else -30)
-        
-    bet_type = "BIG" if size_score >= 0 else "SMALL"
-    
-    main_pool = [5, 6, 7, 8, 9] if bet_type == "BIG" else [0, 1, 2, 3, 4]
-    opp_pool = [0, 1, 2, 3, 4] if bet_type == "BIG" else [5, 6, 7, 8, 9]
-    
-    main_nums = pick_numbers_history(history, main_pool, nextP)
-    opp_nums = pick_numbers_history(history, opp_pool, str(nextP) + "opp")
-    
+        size_score += (30 if types[0] == 'BIG' else -30)
+
+    bet_type = 'BIG' if size_score >= 0 else 'SMALL'
+    if consecutive_losses_tracker == 1:
+        bet_type = types[0]
+    elif consecutive_losses_tracker >= 2:
+        bet_type = types[0]
+
+    main_pool = [5, 6, 7, 8, 9] if bet_type == 'BIG' else [0, 1, 2, 3, 4]
+    opp_pool = [0, 1, 2, 3, 4] if bet_type == 'BIG' else [5, 6, 7, 8, 9]
+
+    main_nums = pick_numbers_deterministic(history, main_pool, nextP, False)
+    opp_nums = pick_numbers_deterministic(history, opp_pool, str(nextP) + 'opp', False)
+
     n1 = main_nums["n1"]
     n2 = opp_nums["n1"]
     if n1 == n2:
         alt = next((p for p in opp_pool if p != n1), main_pool[0])
         n2 = alt
-        
+
     return {"period": str(nextP), "betType": bet_type, "n1": n1, "n2": n2}
 
 async def execute_live_session(channel: str, total_trades: int = 10):
+    global consecutive_losses_tracker
+    consecutive_losses_tracker = 0
     channel = normalize_channel(channel)
     try:
         print(f"🔥 Starting Quantum Deep V59 session for {channel} with {total_trades} trades")
@@ -180,7 +211,6 @@ async def execute_live_session(channel: str, total_trades: int = 10):
             
             pred = generate_deep_v59_prediction(list_data, nextP)
             
-            # HTML file ki tarah exact last 3 digits period number (jaise 723)
             period_full = str(pred["period"])
             period_short = period_full[-3:] if len(period_full) >= 3 else period_full.zfill(3)
             
@@ -206,14 +236,17 @@ async def execute_live_session(channel: str, total_trades: int = 10):
                 
                 if is_jackpot:
                     status_str = "💎 JACKPOT WIN"
+                    consecutive_losses_tracker = 0
                     if JACKPOT_STICKER:
                         await bot.send_sticker(chat_id=channel, sticker=JACKPOT_STICKER)
                 elif is_win:
                     status_str = "✅ WIN"
+                    consecutive_losses_tracker = 0
                     if WIN_STICKER:
                         await bot.send_sticker(chat_id=channel, sticker=WIN_STICKER)
                 else:
                     status_str = "❌ LOSS"
+                    consecutive_losses_tracker += 1
                 
                 updated_text = f"{msg_text}\n\nRESULT: {res_num} ({res_sz}) - {status_str}"
                 await bot.edit_message_text(chat_id=channel, message_id=sent_msg.message_id, text=updated_text)
@@ -229,4 +262,4 @@ async def execute_live_session(channel: str, total_trades: int = 10):
         print(f"✅ Session successfully completed for {channel}")
     except Exception as e:
         print(f"Session error in {channel}: {e}")
-        
+    
