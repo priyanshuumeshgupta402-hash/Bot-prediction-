@@ -1,15 +1,13 @@
 import asyncio
 import aiohttp
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from telegram import Bot
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from config import (
     BOT_TOKEN, SECTION_START_STICKER, WIN_STICKER, 
     JACKPOT_STICKER, SECTION_CLOSE_STICKER, LEVEL_CHART_IMG
 )
 
 bot = Bot(token=BOT_TOKEN)
-scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 API = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
 def normalize_channel(ch_str):
@@ -77,7 +75,7 @@ def generate_v59_prediction(list_data, nextP):
 async def execute_live_session(channel: str, total_trades: int = 10):
     channel = normalize_channel(channel)
     try:
-        print(f"🔥 Executing scheduled session for {channel} with {total_trades} trades")
+        print(f"🔥 Starting instant session for {channel} with {total_trades} trades")
         if SECTION_START_STICKER:
             await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
         
@@ -132,39 +130,7 @@ async def execute_live_session(channel: str, total_trades: int = 10):
         if SECTION_CLOSE_STICKER:
             await asyncio.sleep(2)
             await bot.send_sticker(chat_id=channel, sticker=SECTION_CLOSE_STICKER)
-        print(f"✅ Session successfully completed for {channel}")
+        print(f"✅ Instant session completed for {channel}")
     except Exception as e:
         print(f"Session error in {channel}: {e}")
-
-def schedule_session(channel: str, session_time: str, total_trades: int = 10):
-    """APScheduler ka use karke exact HH:MM par job schedule karega"""
-    try:
-        parts = session_time.strip().split(':')
-        hour = int(parts[0])
-        minute = int(parts[1])
-        
-        # Unique job id channel aur time ke hisaab se
-        job_id = f"{channel}_{hour}_{minute}"
-        
-        # Agar pehle se same time par job hai toh use hata kar naye update karo
-        if scheduler.get_job(job_id):
-            scheduler.remove_job(job_id)
-            
-        scheduler.add_job(
-            execute_live_session,
-            'cron',
-            hour=hour,
-            minute=minute,
-            args=[channel, total_trades],
-            id=job_id,
-            replace_existing=True
-        )
-        print(f"⏰ Successfully scheduled session for {channel} at {hour:02d}:{minute:02d} IST ({total_trades} trades)")
-    except Exception as e:
-        print(f"Scheduling error: {e}")
-
-def init_scheduler():
-    if not scheduler.running:
-        scheduler.start()
-        print("🔥 APScheduler started successfully!")
-            
+                    
