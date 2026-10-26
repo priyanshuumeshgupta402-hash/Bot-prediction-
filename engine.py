@@ -31,10 +31,10 @@ async def run_test_sequence(channel: str):
         await asyncio.sleep(2)
         if LEVEL_CHART_IMG:
             await bot.send_photo(chat_id=channel, photo=LEVEL_CHART_IMG, caption="<b>📊 TEST CHART - BOT IS LIVE</b>", parse_mode="HTML")
-        return True
+        return True, "Success"
     except Exception as e:
         print(f"Test error in channel {channel}: {e}")
-        return False
+        return False, str(e)
 
 def to_bold_unicode(str_val):
     bold_map = {
@@ -146,4 +146,4 @@ async def start_session_workflow(channel: str, session_time: str):
                 print(f"Workflow error in channel {channel}: {e}")
         
         await asyncio.sleep(30)
-                
+    
