@@ -1,0 +1,8 @@
+{
+  "name": "quantum-bot",
+  "version": "1.0.0",
+  "main": "get_pred.js",
+  "dependencies": {
+    "puppeteer": "^22.0.0"
+  }
+}
