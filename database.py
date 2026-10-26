@@ -13,16 +13,6 @@ async def init_db():
                 status TEXT DEFAULT 'Active'
             )
         """)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                channel_username TEXT,
-                period TEXT,
-                prediction_text TEXT,
-                message_id INTEGER,
-                result TEXT DEFAULT 'Pending'
-            )
-        """)
         await db.commit()
 
 async def add_channel_db(user_id: int, channel: str, session_time: str):
@@ -37,4 +27,4 @@ async def get_user_channels(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("SELECT channel_username, session_time, status FROM channels WHERE user_id = ?", (user_id,))
         return await cursor.fetchall()
-      
+        
