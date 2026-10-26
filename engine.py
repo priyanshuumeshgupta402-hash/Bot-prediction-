@@ -11,9 +11,18 @@ bot = Bot(token=BOT_TOKEN)
 API = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
 def get_ist_time():
-    # Render ke UTC time ko exact Indian Standard Time (IST) mein convert karna
     ist_now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
     return ist_now.strftime("%H:%M")
+
+def normalize_time(t_str):
+    # Agar user '3:5' ya '3:05' likhe, toh use '03:05' mein convert kar dega
+    try:
+        parts = t_str.strip().split(':')
+        if len(parts) == 2:
+            return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+    except Exception:
+        pass
+    return t_str.strip()
 
 def to_bold_unicode(str_val):
     bold_map = {
@@ -57,10 +66,12 @@ def generate_v59_prediction(list_data, nextP):
     return {"period": str(nextP), "betType": bet_type, "n1": n1, "n2": n2}
 
 async def start_session_workflow(channel: str, session_time: str):
-    print(f"🚀 Session Workflow initialized for channel {channel} at time {session_time} IST")
+    target_time = normalize_time(session_time)
+    print(f"🚀 Session Workflow initialized for channel {channel} at target time {target_time} IST")
+    
     while True:
         current_time = get_ist_time()
-        if current_time == session_time:
+        if current_time == target_time:
             try:
                 print(f"🔥 Session started for {channel}!")
                 # 1. Send Section Start Sticker
@@ -126,10 +137,9 @@ async def start_session_workflow(channel: str, session_time: str):
                     await asyncio.sleep(2)
                     await bot.send_sticker(chat_id=channel, sticker=SECTION_CLOSE_STICKER)
 
-                # Wait for 2 minutes so it doesn't trigger twice in the same minute
                 await asyncio.sleep(120)
             except Exception as e:
-                print(f"Workflow error: {e}")
+                print(f"Workflow error in channel {channel}: {e}")
         
         await asyncio.sleep(30)
-        
+                
