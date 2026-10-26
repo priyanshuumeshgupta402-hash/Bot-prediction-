@@ -43,11 +43,11 @@ async def test_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     channel = context.args[0]
     await update.message.reply_text(f"<b>🚀 Testing connection on <code>{channel}</code>...</b>", parse_mode="HTML")
-    success = await run_test_sequence(channel)
+    success, err_msg = await run_test_sequence(channel)
     if success:
         await update.message.reply_text(f"<b>✅ Test successful! Check your channel <code>{channel}</code> for sticker & chart.</b>", parse_mode="HTML")
     else:
-        await update.message.reply_text(f"<b>❌ Test failed! Make sure the bot is an ADMIN in <code>{channel}</code> and username is correct. Check Render Logs.</b>", parse_mode="HTML")
+        await update.message.reply_text(f"<b>❌ Test failed!\nTelegram Error: <code>{err_msg}</code></b>", parse_mode="HTML")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -128,4 +128,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
