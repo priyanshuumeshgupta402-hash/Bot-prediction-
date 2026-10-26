@@ -27,4 +27,9 @@ async def get_user_channels(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("SELECT channel_username, session_time, status FROM channels WHERE user_id = ?", (user_id,))
         return await cursor.fetchall()
+
+async def get_all_configured_channels():
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("SELECT channel_username, session_time FROM channels WHERE status = 'Active'")
+        return await cursor.fetchall()
         
