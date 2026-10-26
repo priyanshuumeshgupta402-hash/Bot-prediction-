@@ -2,12 +2,14 @@ import asyncio
 import aiohttp
 import time
 from telegram import Bot
-from config import BOT_TOKEN
+from config import (
+    BOT_TOKEN, SECTION_START_STICKER, WIN_STICKER, 
+    JACKPOT_STICKER, SECTION_CLOSE_STICKER, LEVEL_CHART_IMG
+)
 
 bot = Bot(token=BOT_TOKEN)
 API = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
-# Bold Unicode text generator
 def to_bold_unicode(str_val):
     bold_map = {
         'A': '𝗔', 'B': '𝗕', 'C': '𝗖', 'D': '𝗗', 'E': '𝗘', 'F': '𝗙', 'G': '𝗚',
@@ -49,27 +51,25 @@ def generate_v59_prediction(list_data, nextP):
     n2 = (last_num + 5) % 10
     return {"period": str(nextP), "betType": bet_type, "n1": n1, "n2": n2}
 
-async def start_session_workflow(channel: str, session_time: str, start_image_url: str, level_image_url: str):
+async def start_session_workflow(channel: str, session_time: str):
     while True:
         now_str = time.strftime("%H:%M")
         if now_str == session_time:
             try:
-                # 1. Send Session Start Photo/Banner
-                if start_image_url:
-                    await bot.send_photo(chat_id=channel, photo=start_image_url, caption="<b>🔥 VIP SESSION START 🔥</b>", parse_mode="HTML")
-                else:
-                    await bot.send_message(chat_id=channel, text="<b>🔥 VIP SESSION START 🔥</b>", parse_mode="HTML")
+                # 1. Send Section Start Sticker
+                if SECTION_START_STICKER:
+                    await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
                 
                 await asyncio.sleep(3)
 
                 # 2. Send Level Maintain Chart Image
-                if level_image_url:
-                    await bot.send_photo(chat_id=channel, photo=level_image_url, caption="<b>📊 MAINTAIN 3-LEVEL FUNDS</b>", parse_mode="HTML")
+                if LEVEL_CHART_IMG:
+                    await bot.send_photo(chat_id=channel, photo=LEVEL_CHART_IMG, caption="<b>📊 MAINTAIN 3-LEVEL FUNDS</b>", parse_mode="HTML")
 
                 await asyncio.sleep(5)
 
-                # 3. Start Live Predictions Sequence (10 Rounds per Session)
-                for _ in range(10):
+                # 3. Start 10 Trades Sequence
+                for trade_num in range(1, 11):
                     list_data = await fetch_latest_history()
                     if list_data:
                         latest_issue = str(list_data[0]["issueNumber"])
@@ -78,7 +78,7 @@ async def start_session_workflow(channel: str, session_time: str, start_image_ur
                         pred = generate_v59_prediction(list_data, nextP)
                         period_short = pred["period"][-3:]
                         
-                        bold_period = to_bold_unicode("PERIOD NO - " + period_short)
+                        bold_period = to_bold_unicode(f"PERIOD NO - {period_short}")
                         bold_bet_type = to_bold_unicode(pred["betType"])
                         bold_nums = to_bold_unicode(f"{pred['n1']} , {pred['n2']}")
                         
@@ -86,26 +86,42 @@ async def start_session_workflow(channel: str, session_time: str, start_image_ur
                         
                         sent_msg = await bot.send_message(chat_id=channel, text=msg_text)
                         
-                        # Wait for next draw result
+                        # Wait for round result
                         await asyncio.sleep(55)
                         
-                        # Edit message with Win/Loss Result
+                        # Check result & send respective stickers
                         new_list = await fetch_latest_history()
                         hit = next((x for x in new_list if str(x["issueNumber"]) == pred["period"]), None)
                         if hit:
                             res_num = int(hit["number"])
                             res_sz = "BIG" if res_num >= 5 else "SMALL"
-                            is_win = (res_sz == pred["betType"]) or (res_num in [pred["n1"], pred["n2"]])
-                            status_emoji = "✅ WIN" if is_win else "❌ LOSS"
+                            is_win = (res_sz == pred["betType"])
+                            is_jackpot = (res_num == pred["n1"] or res_num == pred["n2"])
                             
-                            updated_text = f"{msg_text}\n\nRESULT: {res_num} ({res_sz}) {status_emoji}"
+                            if is_jackpot:
+                                status_str = "💎 JACKPOT WIN"
+                                if JACKPOT_STICKER:
+                                    await bot.send_sticker(chat_id=channel, sticker=JACKPOT_STICKER)
+                            elif is_win:
+                                status_str = "✅ WIN"
+                                if WIN_STICKER:
+                                    await bot.send_sticker(chat_id=channel, sticker=WIN_STICKER)
+                            else:
+                                status_str = "❌ LOSS"
+                            
+                            updated_text = f"{msg_text}\n\nRESULT: {res_num} ({res_sz}) - {status_str}"
                             await bot.edit_message_text(chat_id=channel, message_id=sent_msg.message_id, text=updated_text)
                     
-                    await asyncio.sleep(5)
-                
-                break # Session complete
+                    await asyncio.sleep(10)
+
+                # 4. Send Section Close Sticker after 10 trades
+                if SECTION_CLOSE_STICKER:
+                    await asyncio.sleep(2)
+                    await bot.send_sticker(chat_id=channel, sticker=SECTION_CLOSE_STICKER)
+
+                break  # Session finished
             except Exception as e:
                 print(f"Workflow error: {e}")
         
-        await asyncio.sleep(20)
-      
+        await asyncio.sleep(30)
+    
