@@ -25,7 +25,6 @@ def normalize_time(t_str):
 
 async def run_test_sequence(channel: str):
     try:
-        print(f"🧪 Running test sequence for {channel}")
         if SECTION_START_STICKER:
             await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
         await asyncio.sleep(2)
@@ -33,7 +32,6 @@ async def run_test_sequence(channel: str):
             await bot.send_photo(chat_id=channel, photo=LEVEL_CHART_IMG, caption="<b>📊 TEST CHART - BOT IS LIVE</b>", parse_mode="HTML")
         return True, "Success"
     except Exception as e:
-        print(f"Test error in channel {channel}: {e}")
         return False, str(e)
 
 def to_bold_unicode(str_val):
@@ -77,73 +75,75 @@ def generate_v59_prediction(list_data, nextP):
     n2 = (last_num + 5) % 10
     return {"period": str(nextP), "betType": bet_type, "n1": n1, "n2": n2}
 
-async def start_session_workflow(channel: str, session_time: str):
+async def execute_live_session(channel: str, total_trades: int = 10):
+    try:
+        print(f"🔥 Starting {total_trades}-trade session for {channel}")
+        if SECTION_START_STICKER:
+            await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
+        
+        await asyncio.sleep(3)
+        if LEVEL_CHART_IMG:
+            await bot.send_photo(chat_id=channel, photo=LEVEL_CHART_IMG, caption="<b>📊 MAINTAIN 3-LEVEL FUNDS</b>", parse_mode="HTML")
+
+        await asyncio.sleep(5)
+
+        for trade_num in range(1, total_trades + 1):
+            list_data = await fetch_latest_history()
+            if list_data:
+                latest_issue = str(list_data[0]["issueNumber"])
+                nextP = str(int(latest_issue) + 1)
+                
+                pred = generate_v59_prediction(list_data, nextP)
+                period_short = pred["period"][-3:]
+                
+                bold_period = to_bold_unicode(f"PERIOD NO - {period_short}")
+                bold_bet_type = to_bold_unicode(pred["betType"])
+                bold_nums = to_bold_unicode(f"{pred['n1']} , {pred['n2']}")
+                
+                msg_text = f"‼️ {bold_period}\n\n📈 {bold_bet_type} ➔ {bold_nums}"
+                sent_msg = await bot.send_message(chat_id=channel, text=msg_text)
+                
+                await asyncio.sleep(55)
+                
+                new_list = await fetch_latest_history()
+                hit = next((x for x in new_list if str(x["issueNumber"]) == pred["period"]), None)
+                if hit:
+                    res_num = int(hit["number"])
+                    res_sz = "BIG" if res_num >= 5 else "SMALL"
+                    is_win = (res_sz == pred["betType"])
+                    is_jackpot = (res_num == pred["n1"] or res_num == pred["n2"])
+                    
+                    if is_jackpot:
+                        status_str = "💎 JACKPOT WIN"
+                        if JACKPOT_STICKER:
+                            await bot.send_sticker(chat_id=channel, sticker=JACKPOT_STICKER)
+                    elif is_win:
+                        status_str = "✅ WIN"
+                        if WIN_STICKER:
+                            await bot.send_sticker(chat_id=channel, sticker=WIN_STICKER)
+                    else:
+                        status_str = "❌ LOSS"
+                    
+                    updated_text = f"{msg_text}\n\nRESULT: {res_num} ({res_sz}) - {status_str}"
+                    await bot.edit_message_text(chat_id=channel, message_id=sent_msg.message_id, text=updated_text)
+            
+            await asyncio.sleep(10)
+
+        if SECTION_CLOSE_STICKER:
+            await asyncio.sleep(2)
+            await bot.send_sticker(chat_id=channel, sticker=SECTION_CLOSE_STICKER)
+        print(f"✅ Session completed for {channel}")
+    except Exception as e:
+        print(f"Session error in {channel}: {e}")
+
+async def start_session_workflow(channel: str, session_time: str, total_trades: int = 10):
     target_time = normalize_time(session_time)
-    print(f"🚀 Session Workflow initialized for channel {channel} at target time {target_time} IST")
+    print(f"🚀 Registered workflow for {channel} at {target_time} IST for {total_trades} trades")
     
     while True:
         current_time = get_ist_time()
         if current_time == target_time:
-            try:
-                print(f"🔥 Session started for {channel}!")
-                if SECTION_START_STICKER:
-                    await bot.send_sticker(chat_id=channel, sticker=SECTION_START_STICKER)
-                
-                await asyncio.sleep(3)
-                if LEVEL_CHART_IMG:
-                    await bot.send_photo(chat_id=channel, photo=LEVEL_CHART_IMG, caption="<b>📊 MAINTAIN 3-LEVEL FUNDS</b>", parse_mode="HTML")
-
-                await asyncio.sleep(5)
-
-                for trade_num in range(1, 11):
-                    list_data = await fetch_latest_history()
-                    if list_data:
-                        latest_issue = str(list_data[0]["issueNumber"])
-                        nextP = str(int(latest_issue) + 1)
-                        
-                        pred = generate_v59_prediction(list_data, nextP)
-                        period_short = pred["period"][-3:]
-                        
-                        bold_period = to_bold_unicode(f"PERIOD NO - {period_short}")
-                        bold_bet_type = to_bold_unicode(pred["betType"])
-                        bold_nums = to_bold_unicode(f"{pred['n1']} , {pred['n2']}")
-                        
-                        msg_text = f"‼️ {bold_period}\n\n📈 {bold_bet_type} ➔ {bold_nums}"
-                        sent_msg = await bot.send_message(chat_id=channel, text=msg_text)
-                        
-                        await asyncio.sleep(55)
-                        
-                        new_list = await fetch_latest_history()
-                        hit = next((x for x in new_list if str(x["issueNumber"]) == pred["period"]), None)
-                        if hit:
-                            res_num = int(hit["number"])
-                            res_sz = "BIG" if res_num >= 5 else "SMALL"
-                            is_win = (res_sz == pred["betType"])
-                            is_jackpot = (res_num == pred["n1"] or res_num == pred["n2"])
-                            
-                            if is_jackpot:
-                                status_str = "💎 JACKPOT WIN"
-                                if JACKPOT_STICKER:
-                                    await bot.send_sticker(chat_id=channel, sticker=JACKPOT_STICKER)
-                            elif is_win:
-                                status_str = "✅ WIN"
-                                if WIN_STICKER:
-                                    await bot.send_sticker(chat_id=channel, sticker=WIN_STICKER)
-                            else:
-                                status_str = "❌ LOSS"
-                            
-                            updated_text = f"{msg_text}\n\nRESULT: {res_num} ({res_sz}) - {status_str}"
-                            await bot.edit_message_text(chat_id=channel, message_id=sent_msg.message_id, text=updated_text)
-                    
-                    await asyncio.sleep(10)
-
-                if SECTION_CLOSE_STICKER:
-                    await asyncio.sleep(2)
-                    await bot.send_sticker(chat_id=channel, sticker=SECTION_CLOSE_STICKER)
-
-                await asyncio.sleep(120)
-            except Exception as e:
-                print(f"Workflow error in channel {channel}: {e}")
+            await execute_live_session(channel, total_trades)
+            await asyncio.sleep(120)  # Stop duplicate triggers within the same minute
+        await asyncio.sleep(15)       # Check every 15 seconds
         
-        await asyncio.sleep(30)
-    
