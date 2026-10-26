@@ -7,11 +7,7 @@ from engine import start_session_workflow
 from keep_alive import keep_alive
 
 WAIT_CHANNEL, WAIT_TIME = range(2)
-
-# Default Banners
 BANNER_URL = "https://i.ibb.co/tTZmsWrQ/62270897-7b06-4f65-b0cf-958f37cf6ba9.png"
-SESSION_START_IMG = "https://i.ibb.co/tTZmsWrQ/62270897-7b06-4f65-b0cf-958f37cf6ba9.png" # Aap replace kar sakte hain
-LEVEL_CHART_IMG = "https://i.ibb.co/tTZmsWrQ/62270897-7b06-4f65-b0cf-958f37cf6ba9.png" # Level Maintain Image
 
 def main_menu():
     return InlineKeyboardMarkup([
@@ -83,8 +79,8 @@ async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await add_channel_db(user_id, channel, session_time)
     
-    # Start background task for automatic sequence execution
-    asyncio.create_task(start_session_workflow(channel, session_time, SESSION_START_IMG, LEVEL_CHART_IMG))
+    # Start background workflow task
+    asyncio.create_task(start_session_workflow(channel, session_time))
     
     await update.message.reply_text(
         f"<b>✅ Channel <code>{channel}</code> configured successfully!\n⏰ Session Start Time: {session_time}\n\n📌 Note: Make sure the bot is added as an ADMIN in your channel!</b>", 
@@ -114,4 +110,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-          
+        
